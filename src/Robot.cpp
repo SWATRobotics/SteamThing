@@ -10,12 +10,23 @@
 /*
  * I/O map
  * Talons:
- * robotDriveFront CANTalon xxx
- * robotDriveFront CANTalon xxx
- * robotDriveRear CANTalon xxx
- * midwheelRight CANTalon xxx
- * midwheelLeft  CANTalon xxx
- *
+ * robotDriveFront CANTalon 0
+ * robotDriveFront CANTalon 3
+ * robotDriveRear CANTalon 2
+ * robotDriveRear CANTalon 5
+ * midwheelRight CANTalon 1
+ * midwheelLeft  CANTalon 4
+ * winchControl CANTalon
+ * winchFollow CANTalon
+ * shooterControl CANTalon
+ * shooterFollow CANTalon
+ * leftdriveenc GND, Empty, A, +, B
+ * rightdriveenc GND, Empty, A, +, B
+ * gearSolenoid SingleSolenoid - 0
+ * gearIntake DoubleSolenoid - 0, 1
+ * Shift DoubleSolenoid- 2, 3
+ * PCM 0 - 24V
+ * PCM 1 - 12V
  */
 
 // Once Robot is wired, double-check what things are named as
@@ -34,6 +45,8 @@ class Robot: public IterativeRobot {
 	CANTalon shooterFollow;
 	RobotDrive robotDriveFront;
 	RobotDrive robotDriveRear;
+	//Encoder leftdriveenc;
+	//Encoder rightdriveenc;
 	Compressor cps;
 	Solenoid gearSolenoid;
 	DoubleSolenoid gearIntake;
@@ -60,6 +73,8 @@ public:
 		shooterFollow(9),
 		robotDriveFront(talon0 , talon2),
 		robotDriveRear(talon1, talon5),
+		//leftdriveenc(0, 1, false, Encoder::EncodingType::k2X),
+		//rightdriveenc(2, 3, false, Encoder::EncodingType::k2X),
 		cps(),
 		gearSolenoid(1, 0),
 		gearIntake(0, 0, 1),
@@ -92,7 +107,9 @@ private:
 		talon5.SetControlMode(CANSpeedController::kPercentVbus);
 
 		midWheelLeft.SetControlMode(CANSpeedController::kPercentVbus);
+		midWheelLeft.SetFeedbackDevice(CANTalon::QuadEncoder);
 		midWheelRight.SetControlMode(CANSpeedController::kPercentVbus);
+		midWheelRight.SetFeedbackDevice(CANTalon::QuadEncoder);
 
 		winchControl.SetControlMode(CANSpeedController::kPercentVbus);
 		winchFollow.SetControlMode(CANSpeedController::kPercentVbus);
@@ -107,6 +124,22 @@ private:
 		shooterFollow.SetControlMode(CANSpeedController::kFollower);
 		shooterFollow.Set(8);
 
+		/*//Initializes gearbox encoder on left side of drive train
+		leftdriveenc.Reset();
+		leftdriveenc.SetMaxPeriod(.1);
+		leftdriveenc.SetMinRate(10);
+		leftdriveenc.SetDistancePerPulse(2.8125);
+		leftdriveenc.SetReverseDirection(false);
+		leftdriveenc.SetSamplesToAverage(7);
+
+		//Initializes gearbox encoder on right side of drive train
+		rightdriveenc.Reset();
+		rightdriveenc.SetMaxPeriod(.1);
+		rightdriveenc.SetMinRate(10);
+		rightdriveenc.SetDistancePerPulse(2.8125);
+		rightdriveenc.SetReverseDirection(false);
+		rightdriveenc.SetSamplesToAverage(7); */
+
 		cam0 = CameraServer::GetInstance()->StartAutomaticCapture(0);
 		cam1 = CameraServer::GetInstance()->StartAutomaticCapture(1);
 	}
@@ -116,13 +149,48 @@ private:
 
 	bool isRedAlliance = false;
 	bool isBlueAlliance = false;
+	bool driveForward = false;
+	bool gearAuton = false;
+	bool lowGoalAuton = false;
+	bool nothing = false;
 
+	void EnableClosedLoop(double targetPosition, double rightmotorDirection, double leftmotorDirection) {
+		midWheelLeft.SetVoltageRampRate(0);
+		midWheelRight.SetVoltageRampRate(0);
 
-	double driveTime = 0.0;
-	double turnTime = 0.0;
-	double timeTwo = 0.0;
-	double timeThree = 0.0;
-	double timeFour = 0.0;
+		midWheelLeft.SetControlMode(CANTalon::kPosition);
+		midWheelRight.SetControlMode(CANTalon::kPosition);
+
+		talon1.SetControlMode(CANSpeedController::kFollower);
+		talon2.SetControlMode(CANSpeedController::kFollower);
+		talon0.SetControlMode(CANSpeedController::kFollower);
+		talon5.SetControlMode(CANSpeedController::kFollower);
+
+		talon1.Set(4);
+		talon2.Set(1);
+		talon0.Set(4);
+		talon5.Set(1);
+
+		midWheelRight.Set(rightmotorDirection * targetPosition);
+		midWheelLeft.Set(leftmotorDirection * targetPosition);
+	}
+
+	void StopRobot() {
+		robotDriveFront.SetLeftRightMotorOutputs(0, 0); //stops robot
+		robotDriveRear.SetLeftRightMotorOutputs(0, 0);
+		midWheelLeft.Set(0);
+		midWheelRight.Set(0);
+	}
+
+	void Gear(double timeTwo) {
+		float time = timer.Get();
+
+		timer.Reset();
+		time = timer.Get();
+		while (time < timeTwo) {
+			gearSolenoid.Set(false);
+		}
+	}
 
 	void AutonomousInit() {
 		if (jsG.GetRawButton(2)) {
@@ -133,6 +201,28 @@ private:
 			isRedAlliance = false;
 			isBlueAlliance = true;
 		}
+		if (jsG.GetRawButton(4)) {
+			driveForward = true;
+			gearAuton = false;
+			lowGoalAuton = false;
+			nothing = false;
+		} else if (jsG.GetRawButton(6)) {
+			gearAuton = true;
+			driveForward = false;
+			lowGoalAuton = false;
+			nothing = false;
+		} else if (jsG.GetRawButton(7)) {
+			gearAuton = false;
+			driveForward = false;
+			lowGoalAuton = true;
+			nothing = false;
+		} else if (jsG.GetRawButton(5)) {
+			nothing = true;
+			gearAuton = false;
+			driveForward = false;
+			lowGoalAuton = false;
+			nothing = false;
+		}
 
 		cps.Start();
 
@@ -140,9 +230,8 @@ private:
 		timer.Start();
 	}
 
-
 	void AutonomousPeriodic() {
-		if (isRedAlliance && !isBlueAlliance) {
+		/*if (isRedAlliance && !isBlueAlliance) {
 			driveTime = 5.0;
 			turnTime = 1.0;
 			timeTwo = 1.0;
@@ -160,7 +249,7 @@ private:
 			timeTwo = 0.0;
 			timeThree = 0.0;
 			timeFour = 0.0;
-		}
+		} */
 
 		auto grip = NetworkTable::GetTable("grip");
 
@@ -169,71 +258,86 @@ private:
 
 		float time = timer.Get();
 
-		if (index == 0) {
+		double lcount = midWheelLeft.GetEncPosition();
+		double rcount = midWheelRight.GetEncPosition();
+
+		//leftdriveenc.Reset();
+		//rightdriveenc.Reset();
+
+		if (nothing) {
+			StopRobot();
+
+		}
+
+		if (gearAuton) {
 				// MPH - is the gearshift default correct for autonomous?
-			float leftInput = -0.37; //EGH - sets left and right voltage input of drive train
-			float rightInput = -0.37;
+			midWheelLeft.SetPosition(0);
+			midWheelRight.SetPosition(0);
 
-			timer.Reset();
-			time = timer.Get();
-			while (time < driveTime) {
-				robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput); // MPH - maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-				robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput); // maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-				midWheelLeft.Set(leftInput);
-				midWheelRight.Set(-1 * rightInput);
+			EnableClosedLoop(3000, 1, 1);
+
+			midWheelLeft.SetPosition(0);
+			midWheelRight.SetPosition(0);
+
+			if (isRedAlliance) {
+				EnableClosedLoop(3000, 1, -1);
+			} else if (isBlueAlliance) {
+				EnableClosedLoop(3000, -1, 1);
 			}
 
-			timer.Reset();
-			time = timer.Get();
-			while (time < turnTime) {
-				if (isRedAlliance) {
-					robotDriveFront.SetLeftRightMotorOutputs(leftInput, -rightInput); // MPH - maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-					robotDriveRear.SetLeftRightMotorOutputs(leftInput, -rightInput); // maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-					midWheelLeft.Set(leftInput);
-					midWheelRight.Set(1 * rightInput);
-				}
-				if (isBlueAlliance) {
-					robotDriveFront.SetLeftRightMotorOutputs(-leftInput, rightInput); // MPH - maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-					robotDriveRear.SetLeftRightMotorOutputs(-leftInput, rightInput); // maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-					midWheelLeft.Set(-leftInput);
-					midWheelRight.Set(-1 * rightInput);
-				}
-			}
+			EnableClosedLoop(1000, 1, 1);
 
-			timer.Reset();
-			time = timer.Get();
-			while (time < timeTwo) {
-				gearSolenoid.Set(false);
-			}
+			Gear(2.0);
 
 			gearSolenoid.Set(true);
-			timer.Reset();
-			time = timer.Get();
-			while (time < timeThree) {
-				robotDriveFront.SetLeftRightMotorOutputs(-leftInput, -rightInput); // MPH - maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-				robotDriveRear.SetLeftRightMotorOutputs(-leftInput, -rightInput); // maybe 0.25, 0.25 ? why is Right negative?  it's positive on TeleOp?
-				midWheelLeft.Set(-leftInput);
-				midWheelRight.Set(1 * rightInput);
-			}
 
-			timer.Reset();
-			time = timer.Get();
-			while (time < timeFour) {
+			EnableClosedLoop(1000, -1, -1);
 
-			}
-
-			robotDriveFront.SetLeftRightMotorOutputs(0, 0); //stops robot
-			robotDriveRear.SetLeftRightMotorOutputs(0, 0);
-			midWheelLeft.Set(0);
-			midWheelRight.Set(0);
-
+			StopRobot();
 			//printf("{%.2f},\n", rcount);
 			printf("{%.2f},\n", time);
+		}
+
+		if (driveForward) {
+			EnableClosedLoop(10000, 1, 1);
+		}
+
+		if (lowGoalAuton) {
+			midWheelLeft.SetPosition(0);
+			midWheelRight.SetPosition(0);
+
+			EnableClosedLoop(3000, 1, 1);
+
+			midWheelLeft.SetPosition(0);
+			midWheelRight.SetPosition(0);
+
+			if (isRedAlliance) {
+				EnableClosedLoop(3000, 1, -1);
+			} else if (isBlueAlliance) {
+				EnableClosedLoop(3000, -1, 1);
+			}
+
+			EnableClosedLoop(1000, 1, 1);
+
+
+			EnableClosedLoop(1000, -1, -1);
+
+			StopRobot();
+			//printf("{%.2f},\n", rcount);
+			printf("{%.2f},\n", time);
+
 		}
 	}
 
 	void TeleopInit() {
 		cps.Start();
+
+		talon0.SetControlMode(CANSpeedController::kPercentVbus);
+		talon1.SetControlMode(CANSpeedController::kPercentVbus);
+		talon2.SetControlMode(CANSpeedController::kPercentVbus);
+		talon5.SetControlMode(CANSpeedController::kPercentVbus);
+		midWheelLeft.SetControlMode(CANSpeedController::kPercentVbus);
+		midWheelRight.SetControlMode(CANSpeedController::kPercentVbus);
 
 		Shift.Set(DoubleSolenoid::kOff);
 	}
@@ -303,16 +407,13 @@ private:
 			cps.Start();
 		}
 
-	void TestPeriodic() {
-
+	void AutoDrive(double leftInput, double rightInput) {
 		float time = timer.Get();
 
 		timer.Reset();
 		timer.Start();
 		time = timer.Get();
 		while (time < 2) {
-			double leftInput = 0.10;
-			double rightInput = 0.10;
 
 			robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
 			robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
@@ -320,76 +421,25 @@ private:
 			midWheelRight.Set(-1 * rightInput);
 
 			time = timer.Get();
-			printf("drive wheel 1/10 speed test");
+			printf("drive wheel", leftInput, "speed test");
 		}
+	}
+
+	void TestPeriodic() {
+
+		AutoDrive(0.10, 0.10);
+
+		AutoDrive(0.50, 0.50);
+
+		AutoDrive(1.00, 1.00);
+
+		AutoDrive(1.00, -1.00);
+
+		AutoDrive(-1.00, -1.00);
 
 		timer.Reset();
 		timer.Start();
-		time = timer.Get();
-		while (time < 2) {
-			double leftInput = 0.50;
-			double rightInput = 0.50;
-
-			robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
-			robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
-			midWheelLeft.Set(leftInput);
-			midWheelRight.Set(-1 * rightInput);
-
-			time = timer.Get();
-			printf("drive wheel 1/2 speed test");
-		}
-
-		timer.Reset();
-		timer.Start();
-		time = timer.Get();
-		while (time < 2) {
-			double leftInput = 1.00;
-			double rightInput = 1.00;
-
-			robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
-			robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
-			midWheelLeft.Set(leftInput);
-			midWheelRight.Set(-1 * rightInput);
-
-			time = timer.Get();
-			printf("drive wheel full speed test");
-		}
-
-		timer.Reset();
-		timer.Start();
-		time = timer.Get();
-		while (time < 2) {
-			double leftInput = 1.00;
-			double rightInput = -1.00;
-
-			robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
-			robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
-			midWheelLeft.Set(leftInput);
-			midWheelRight.Set(-1 * rightInput);
-
-			time = timer.Get();
-			printf("drive wheel turn speed test");
-		}
-
-		timer.Reset();
-		timer.Start();
-		time = timer.Get();
-		while (time < 2) {
-			double leftInput = -1.00;
-			double rightInput = -1.00;
-
-			robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
-			robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
-			midWheelLeft.Set(leftInput);
-			midWheelRight.Set(-1 * rightInput);
-
-			time = timer.Get();
-			printf("drive wheel backwards test");
-		}
-
-		timer.Reset();
-		timer.Start();
-		time = timer.Get();
+		double time = timer.Get();
 		while (time < 3) {
 			double leftInput = 1.00;
 			double rightInput = 1.00;
