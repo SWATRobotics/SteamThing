@@ -510,3 +510,5 @@ private:
 };
 
 START_ROBOT_CLASS(Robot)
+
+//endtest
