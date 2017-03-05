@@ -2,10 +2,21 @@
 #include "Commands/Command.h"
 #include "Commands/ExampleCommand.h"
 #include "CommandBase.h"
+#include "CameraServer.h"
 #include "CANTalon.h"
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/core/core.hpp>
 #include <AHRS.h>
+#include <Timer.h>
+#include <vector>
+#include <string>
+
+//
+#include "Commands/GripPipeline.h"
+#include "GripPipeline.h"
+//#include "ctre.h"               //BIT Defines + Typedefs
+//#include "CtreCanNode.h"
+
 
 /*
  * I/O map
@@ -29,7 +40,15 @@
  * PCM 1 - 12V
  */
 
-// Once Robot is wired, double-check what things are named as <test1>
+// Once Robot is wired, double-check what things are named as
+
+// CameraServer stuff is to send the camera image to the Dashboard
+// There's a folder on the desktop that has GripPipeline.h and a .txt document with the code GRIP generated
+// It is very messy and probably should be arranged.
+
+//using namespace cs;
+//using namespace frc;
+using namespace cv;
 
 class Robot: public IterativeRobot {
 
