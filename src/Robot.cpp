@@ -29,7 +29,7 @@
  * PCM 1 - 12V
  */
 
-// Once Robot is wired, double-check what things are named as <test>
+// Once Robot is wired, double-check what things are named as <test1>
 
 class Robot: public IterativeRobot {
 
