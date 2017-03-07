@@ -12,8 +12,8 @@
 #include <string>
 
 //
-#include "Commands/GripPipeline.h"
-#include "GripPipeline.h"
+//#include "Commands/GripPipeline.h"
+//#include "GripPipeline.h"
 //#include "ctre.h"               //BIT Defines + Typedefs
 //#include "CtreCanNode.h"
 
