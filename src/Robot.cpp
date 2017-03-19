@@ -67,12 +67,17 @@ class Robot: public IterativeRobot {
 	//Encoder leftdriveenc;
 	//Encoder rightdriveenc;
 	Compressor cps;
+	DigitalInput plate1;
+	DigitalInput plate2;
+	DigitalOutput relay;
 	Solenoid gearSolenoid;
 	DoubleSolenoid gearIntake;
 	DoubleSolenoid Shift;
+	DoubleSolenoid hopperIntake;
+	DoubleSolenoid hopperOuttake;
 	Joystick jsL;
 	Joystick jsR;
-	Joystick jsG;
+	//Joystick jsG;
 	Timer timer;
 	cs::UsbCamera cam0;
 	cs::UsbCamera cam1;
@@ -84,6 +89,8 @@ public:
 		talon1(2),
 		talon2(3),
 		talon5(5),
+		plate1(1),
+		plate2(2),
 		midWheelLeft(4),
 		midWheelRight(1),
 		winchControl(6),
@@ -92,15 +99,18 @@ public:
 		shooterFollow(9),
 		robotDriveFront(talon0 , talon2),
 		robotDriveRear(talon1, talon5),
+		relay(0),
 		//leftdriveenc(0, 1, false, Encoder::EncodingType::k2X),
 		//rightdriveenc(2, 3, false, Encoder::EncodingType::k2X),
 		cps(),
 		gearSolenoid(1, 0),
 		gearIntake(0, 0, 1),
-		Shift(0, 2, 3),
+		Shift(0, 4, 5),
+		hopperIntake(0, 2, 3),
+		hopperOuttake(0, 6, 7),
 		jsL(0),
-		jsR(1),
-		jsG(2){
+		jsR(1) {
+		//jsG(2){
 	}
 
 
@@ -118,6 +128,14 @@ private:
 			//grip::GripPipeline gp;
 		}
 	}
+
+	bool isRedAlliance = false;
+	bool isBlueAlliance = false;
+	bool driveForward = false;
+	bool gearAuton = false;
+	bool lowGoalAuton = false;
+	bool timeGear = true;
+	bool nothing = false;
 
 	void RobotInit() {
 		talon0.SetControlMode(CANSpeedController::kPercentVbus);
@@ -161,17 +179,51 @@ private:
 
 		cam0 = CameraServer::GetInstance()->StartAutomaticCapture(0);
 		cam1 = CameraServer::GetInstance()->StartAutomaticCapture(1);
+
+		/*if (jsL.GetRawButton(2)) {
+			isRedAlliance = true;
+			isBlueAlliance = false;
+		}
+		else if (jsL.GetRawButton(3)) {
+			isRedAlliance = false;
+			isBlueAlliance = true;
+		}
+		if (jsL.GetRawButton(4)) {
+			driveForward = true;
+			gearAuton = false;
+			lowGoalAuton = false;
+			nothing = false;
+			timeGear = false;
+		} else if (jsL.GetRawButton(6)) {
+			gearAuton = true;
+			driveForward = false;
+			lowGoalAuton = false;
+			nothing = false;
+			timeGear = false;
+		} else if (jsL.GetRawButton(7)) {
+			gearAuton = false;
+			driveForward = false;
+			lowGoalAuton = true;
+			nothing = false;
+			timeGear = false;
+		} else if (jsL.GetRawButton(5)) {
+			nothing = true;
+			gearAuton = false;
+			driveForward = false;
+			lowGoalAuton = false;
+			timeGear = false;
+		} else if (jsL.GetRawButton(1)) {
+			nothing = false;
+			gearAuton = false;
+			driveForward = false;
+			lowGoalAuton = false;
+			timeGear = true;
+		}*/
+
 	}
 
 	int pointer = 0;
 	int index = 0;
-
-	bool isRedAlliance = false;
-	bool isBlueAlliance = false;
-	bool driveForward = false;
-	bool gearAuton = false;
-	bool lowGoalAuton = false;
-	bool nothing = false;
 
 	void EnableClosedLoop(double targetPosition, double rightmotorDirection, double leftmotorDirection) {
 		midWheelLeft.SetVoltageRampRate(0);
@@ -208,40 +260,14 @@ private:
 		time = timer.Get();
 		while (time < timeTwo) {
 			gearSolenoid.Set(false);
+			time = timer.Get();
 		}
 	}
 
+	int off = 0;
+
 	void AutonomousInit() {
-		if (jsG.GetRawButton(2)) {
-			isRedAlliance = true;
-			isBlueAlliance = false;
-		}
-		if (jsG.GetRawButton(3)) {
-			isRedAlliance = false;
-			isBlueAlliance = true;
-		}
-		if (jsG.GetRawButton(4)) {
-			driveForward = true;
-			gearAuton = false;
-			lowGoalAuton = false;
-			nothing = false;
-		} else if (jsG.GetRawButton(6)) {
-			gearAuton = true;
-			driveForward = false;
-			lowGoalAuton = false;
-			nothing = false;
-		} else if (jsG.GetRawButton(7)) {
-			gearAuton = false;
-			driveForward = false;
-			lowGoalAuton = true;
-			nothing = false;
-		} else if (jsG.GetRawButton(5)) {
-			nothing = true;
-			gearAuton = false;
-			driveForward = false;
-			lowGoalAuton = false;
-			nothing = false;
-		}
+		relay.Set(0); // turns the light on
 
 		cps.Start();
 
@@ -283,9 +309,8 @@ private:
 		//leftdriveenc.Reset();
 		//rightdriveenc.Reset();
 
-		if (nothing) {
+		/*if (nothing) {
 			StopRobot();
-
 		}
 
 		if (gearAuton) {
@@ -318,10 +343,76 @@ private:
 		}
 
 		if (driveForward) {
-			EnableClosedLoop(10000, 1, 1);
+			float time = timer.Get();
+			double leftInput = 0.37;
+			double rightInput = 0.37;
+
+			timer.Reset();
+			timer.Start();
+			time = timer.Get();
+			while (time < 4) {
+				robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
+				robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
+				midWheelLeft.Set(leftInput);
+				midWheelRight.Set(-1 * rightInput);
+
+				time = timer.Get();
+			}
+		}*/
+
+		if (timeGear) {
+			float time = timer.Get();
+			double leftInput = 0.37;
+			double rightInput = 0.37;
+
+			timer.Reset();
+			timer.Start();
+			time = timer.Get();
+			while (time < 4 && off == 0) {
+				robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
+				robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
+				midWheelLeft.Set(leftInput);
+				midWheelRight.Set(-1 * rightInput);
+				time = timer.Get();
+				/*if (plate1.Get() == true || plate2.Get() == true ) {
+					if (leftInput > 0) {
+						leftInput = 0;
+						rightInput = 0;
+					}
+					if (rightInput > 0 ) {
+						rightInput = 0;
+					}
+					gearSolenoid.Set(false);
+					time = 4;
+				}*/
+			}
+
+			/*timer.Reset();
+			timer.Start();
+			time = timer.Get();
+			while (time < 3 && off == 0) {
+				leftInput = -0.20;
+				rightInput = -0.20;
+
+				gearSolenoid.Set(false);
+
+				robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
+				robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
+				midWheelLeft.Set(leftInput);
+				midWheelRight.Set(-1 * rightInput);
+				time = timer.Get();
+			}*/
+			off = 1;
 		}
 
-		if (lowGoalAuton) {
+		if (off == 1) {
+			robotDriveFront.SetLeftRightMotorOutputs(0, 0);
+			robotDriveRear.SetLeftRightMotorOutputs(0, 0);
+			midWheelLeft.Set(0);
+			midWheelRight.Set(0);
+		}
+
+		/*if (lowGoalAuton) {
 			midWheelLeft.SetPosition(0);
 			midWheelRight.SetPosition(0);
 
@@ -345,12 +436,12 @@ private:
 			//printf("{%.2f},\n", rcount);
 			printf("{%.2f},\n", time);
 
-		}
+		}*/
 	}
 
 	void TeleopInit() {
 		cps.Start();
-
+		relay.Set(1);
 		talon0.SetControlMode(CANSpeedController::kPercentVbus);
 		talon1.SetControlMode(CANSpeedController::kPercentVbus);
 		talon2.SetControlMode(CANSpeedController::kPercentVbus);
@@ -362,29 +453,76 @@ private:
 	}
 
 	void Drive() {
-		float leftInput = 1 * jsL.GetY();
-		float rightInput = 1 * jsR.GetY();
-		float leftMidwheelInput = 1 * jsL.GetY();
-		float rightMidwheelInput = 1* jsR.GetY();
+		float leftEncCheck = midWheelLeft.IsSensorPresent(CANTalon::QuadEncoder);
+		float rightEncCheck = midWheelRight.IsSensorPresent(CANTalon::QuadEncoder);
+
+		float leftEnc = midWheelLeft.GetEncPosition();
+		float leftEnc1 = midWheelLeft.GetPosition();
+		float rightEnc = midWheelRight.GetEncPosition();
+		float rightEnc1 = midWheelRight.GetPosition();
+
+		float leftInput = 0.70 * jsL.GetY();
+		float rightInput = 0.70 * jsR.GetY();
+		float leftMidwheelInput = 0.70 * jsL.GetY();
+		float rightMidwheelInput = 0.70 * jsR.GetY();
 		robotDriveFront.SetLeftRightMotorOutputs(leftInput, rightInput);
 		robotDriveRear.SetLeftRightMotorOutputs(leftInput, rightInput);
 		midWheelLeft.Set(leftMidwheelInput);
 		midWheelRight.Set(-1 * rightMidwheelInput);
 
+
+		/*
+		if (plate1.Get() == true || plate2.Get() == true ) {
+
+			if (leftInput > 0 ) {
+				leftInput = 0;
+				leftMidwheelInput = 0;
+				midWheelLeft.Set(0);
+				midWheelRight.Set(0);
+				robotDriveFront.SetLeftRightMotorOutputs(leftInput, 0);
+				robotDriveRear.SetLeftRightMotorOutputs(leftInput, 0);
+			}
+			if (rightInput > 0 ) {
+				rightInput = 0;
+				rightMidwheelInput = 0;
+				midWheelRight.Set(0);
+				midWheelLeft.Set(0);
+				robotDriveFront.SetLeftRightMotorOutputs(0, rightInput);
+				robotDriveRear.SetLeftRightMotorOutputs(0, rightInput);
+			}
+			float time = timer.Get();
+			timer.Reset();
+			timer.Start();
+			time = timer.Get();
+			while (time < 2) {
+				gearSolenoid.Set(true);
+				time = timer.Get();
+			}
+
+		} */
+		//
+
+		printf("{%.2f,\n", leftEnc);
+		printf("{%.2f,\n", rightEnc);
+		printf("{%.2f,\n", leftEnc1);
+		printf("{%.2f,\n", rightEnc1);
+		printf("{%.2f,\n", leftEncCheck);
+		printf("{%.2f,\n", rightEncCheck);
+
 	}
 
 	void Gears() {
-		if (jsG.GetRawButton(2)) {
-			gearSolenoid.Set(false);
+		if (jsL.GetRawButton(1)) {
+			gearSolenoid.Set(true);
 		//}
 		} else {
-			gearSolenoid.Set(true);
+			gearSolenoid.Set(false);
 		}
 
-		if (jsG.GetRawButton(4)) {
+		if (jsL.GetRawButton(4)) {
 			gearIntake.Set(DoubleSolenoid::kForward);
 		}
-		else if (jsG.GetRawButton(5)) {
+		else if (jsL.GetRawButton(5)) {
 			gearIntake.Set(DoubleSolenoid::kReverse);
 		} else {
 			gearIntake.Set(DoubleSolenoid::kOff);
@@ -392,9 +530,20 @@ private:
 	}
 
 	void Balls() {
+		if (jsR.GetRawButton(3)) {
+			hopperIntake.Set(DoubleSolenoid::kForward);
+		} else if (jsR.GetRawButton(2)) {
+			hopperIntake.Set(DoubleSolenoid::kReverse);
+		} else {
+			hopperIntake.Set(DoubleSolenoid::kOff);
+		}
 
-		if (jsG.GetRawButton(1)) {
-			shooterControl.Set(1);
+		if (jsR.GetRawButton(4)) {
+			hopperOuttake.Set(DoubleSolenoid::kForward);
+		} else if (jsR.GetRawButton(5)) {
+			hopperOuttake.Set(DoubleSolenoid::kReverse);
+		} else {
+			hopperOuttake.Set(DoubleSolenoid::kOff);
 		}
 	}
 
@@ -409,8 +558,13 @@ private:
 	}
 
 	void Winch() {
-		float winchInput = jsG.GetY();
-		winchControl.Set(-1 * abs(winchInput));
+		float winchInput = jsR.GetZ();
+
+		if (jsR.GetRawButton(1)) {
+			winchControl.Set(1 * abs(winchInput));
+		} else {
+			winchControl.Set(0);
+		}
 	}
 
 	void TeleopPeriodic() {
@@ -440,12 +594,12 @@ private:
 			midWheelRight.Set(-1 * rightInput);
 
 			time = timer.Get();
-			printf("drive wheel", leftInput, "speed test");
+			printf("drive wheel", leftInput);
 		}
 	}
 
 	void TestPeriodic() {
-
+		double time = timer.Get();
 		AutoDrive(0.10, 0.10);
 
 		AutoDrive(0.50, 0.50);
@@ -455,7 +609,7 @@ private:
 		AutoDrive(1.00, -1.00);
 
 		AutoDrive(-1.00, -1.00);
-
+		/*
 		timer.Reset();
 		timer.Start();
 		double time = timer.Get();
@@ -480,6 +634,7 @@ private:
 				midWheelRight.Set(-1 * rightInput);
 
 				Shift.Set(DoubleSolenoid::kReverse);
+				time = timer.Get();
 			}
 
 			Shift.Set(DoubleSolenoid::kOff);
@@ -487,6 +642,7 @@ private:
 			time = timer.Get();
 			printf("drive wheel shift test");
 		}
+		*/
 
 		timer.Reset();
 		timer.Start();
@@ -508,6 +664,7 @@ private:
 
 			while (time < 2 && time > 1) {
 				gearIntake.Set(DoubleSolenoid::kReverse);
+				time = timer.Get();
 			}
 
 			time = timer.Get();
@@ -520,9 +677,46 @@ private:
 		time = timer.Get();
 		while (time < 2) {
 			gearSolenoid.Set(true);
+
+			time = timer.Get();
 			printf("gear outtake test");
 		}
 		gearSolenoid.Set(false);
+
+		timer.Reset();
+		timer.Start();
+		time = timer.Get();
+		while (time < 2) {
+			hopperIntake.Set(DoubleSolenoid::kForward);
+
+		while (time < 2 && time > 1) {
+			hopperIntake.Set(DoubleSolenoid::kReverse);
+			time = timer.Get();
+		}
+
+		time = timer.Get();
+		printf("hopper intake test");
+		}
+		hopperIntake.Set(DoubleSolenoid::kOff);
+
+		timer.Reset();
+		timer.Start();
+		time = timer.Get();
+		while (time < 2) {
+			hopperOuttake.Set(DoubleSolenoid::kForward);
+
+		while (time < 2 && time > 1) {
+			hopperOuttake.Set(DoubleSolenoid::kReverse);
+			time = timer.Get();
+		}
+
+		time = timer.Get();
+		printf("hopper outtake test");
+		}
+		hopperOuttake.Set(DoubleSolenoid::kOff);
+
+
+
 
 	}
 
